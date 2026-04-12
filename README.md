@@ -1,0 +1,1 @@
+# skill_chekc2_check_by_schema
