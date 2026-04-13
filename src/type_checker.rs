@@ -1,6 +1,6 @@
 use crate::check_type::CheckType;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub struct TypeError {
     pub message: String,
 }

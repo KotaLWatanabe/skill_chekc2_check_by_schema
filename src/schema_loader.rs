@@ -35,6 +35,7 @@ impl std::fmt::Display for SchemaLoadError {
 
 impl std::error::Error for SchemaLoadError {}
 
+#[inline]
 fn load_schema_file(path: impl AsRef<Path>) -> std::io::Result<String> {
     fs::read_to_string(path)
 }

@@ -6,11 +6,12 @@ edition = "2024"
 [dependencies]
 nom = "8"
 clap = { version = "4", features = ["derive"] }
-skill_chekc1_conf_load = { path = "../skill_chekc1_conf_load" }
+skill_chekc1_conf_load = { git = "https://github.com/KotaLWatanabe/skill_chekc1_conf_load.git" }
 
 [dev-dependencies]
 assert_cmd = "2"
 predicates = "3"
+proptest = "1"
 
 [[bin]]
 name = "check_conf"

@@ -7,9 +7,11 @@ use crate::schema_loader::load_and_parse_schema;
 use crate::schema_parser::check_parsed_map_against_schema;
 use clap::Parser;
 use skill_chekc1_conf_load::parse_conf_file;
-use std::path::PathBuf;
+use std::fmt;
+use std::io;
+use std::path::{Path, PathBuf};
 
-#[derive(Parser, Debug)]
+#[derive(Parser)]
 #[command(name = "check_conf")]
 #[command(about = "Schema validator for sysctl config files", long_about = None)]
 struct Args {
@@ -19,41 +21,100 @@ struct Args {
     schema_path: PathBuf,
 }
 
+#[derive(Debug)]
+enum AppError {
+    InputPath(InputPathError),
+    ParseConf(skill_chekc1_conf_load::ParseFileError),
+    ParseSchema(crate::schema_loader::SchemaLoadError),
+    Validation(Vec<crate::type_checker::TypeError>),
+}
+
+#[derive(Debug)]
+struct InputPathError {
+    path: PathBuf,
+    kind: InputPathErrorKind,
+}
+
+#[derive(Debug)]
+enum InputPathErrorKind {
+    NotFound,
+    NotAFile,
+    Io(io::Error),
+}
+
+impl fmt::Display for AppError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AppError::InputPath(err) => write!(f, "{}", err),
+            AppError::ParseConf(err) => write!(f, "Error parsing configuration file: {}", err),
+            AppError::ParseSchema(err) => write!(f, "Error at parsing schema file: {}", err),
+            AppError::Validation(errors) => {
+                writeln!(f, "Validation errors:")?;
+                for error in errors {
+                    writeln!(f, "- {}", error.message)?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+impl fmt::Display for InputPathError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.kind {
+            InputPathErrorKind::NotFound => {
+                write!(f, "Error: File not found: {}", self.path.display())
+            }
+            InputPathErrorKind::NotAFile => {
+                write!(f, "Error: Path is not a file: {}", self.path.display())
+            }
+            InputPathErrorKind::Io(err) => {
+                write!(
+                    f,
+                    "Error: Failed to access path {}: {}",
+                    self.path.display(),
+                    err
+                )
+            }
+        }
+    }
+}
+
 fn main() {
+    if let Err(err) = run() {
+        eprintln!("{}", err);
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<(), AppError> {
     let args = Args::parse();
 
-    if !args.conf_path.exists() {
-        eprintln!("Error: File not found: {}", args.conf_path.display());
-        std::process::exit(1);
-    }
-    if !args.schema_path.exists() {
-        eprintln!("Error: File not found: {}", args.schema_path.display());
-        std::process::exit(1);
-    }
+    validate_input_file(&args.conf_path).map_err(AppError::InputPath)?;
+    validate_input_file(&args.schema_path).map_err(AppError::InputPath)?;
 
-    if !args.conf_path.is_file() {
-        eprintln!("Error: Path is not a file: {}", args.conf_path.display());
-        std::process::exit(1);
-    }
-    if !args.schema_path.is_file() {
-        eprintln!("Error: Path is not a file: {}", args.schema_path.display());
-        std::process::exit(1);
-    }
+    let parsed = parse_conf_file(&args.conf_path).map_err(AppError::ParseConf)?;
+    let schema = load_and_parse_schema(&args.schema_path).map_err(AppError::ParseSchema)?;
 
-    let parsed = parse_conf_file(args.conf_path).unwrap_or_else(|err| {
-        eprintln!("Error parsing configuration file: {}", err);
-        std::process::exit(1);
-    });
-    let schema = load_and_parse_schema(args.schema_path).unwrap_or_else(|err| {
-        eprintln!("Error at parsing schema file: {}", err);
-        std::process::exit(1);
-    });
+    check_parsed_map_against_schema(&parsed, &schema).map_err(AppError::Validation)?;
 
-    check_parsed_map_against_schema(&parsed, &schema).unwrap_or_else(|errors| {
-        eprintln!("Validation errors:");
-        for error in errors {
-            eprintln!("- {}", error.message);
-        }
-        std::process::exit(1);
-    });
+    Ok(())
+}
+
+fn validate_input_file(path: &Path) -> Result<(), InputPathError> {
+    match path.metadata() {
+        Ok(metadata) if metadata.is_file() => Ok(()),
+        Ok(_) => Err(InputPathError {
+            path: path.to_path_buf(),
+            kind: InputPathErrorKind::NotAFile,
+        }),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Err(InputPathError {
+            path: path.to_path_buf(),
+            kind: InputPathErrorKind::NotFound,
+        }),
+        Err(err) => Err(InputPathError {
+            path: path.to_path_buf(),
+            kind: InputPathErrorKind::Io(err),
+        }),
+    }
 }
