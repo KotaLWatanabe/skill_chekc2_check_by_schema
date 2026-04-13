@@ -210,6 +210,17 @@ mod tests {
     }
 
     #[test]
+    fn コロンが複数ある行でエラー() {
+        let input = "endpoint : string : extra";
+        let result = parse_schema(input);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.line, 1);
+        assert!(err.message.contains("unsupported type"));
+    }
+
+    #[test]
     fn 空のキーでエラー() {
         let input = " : string";
         let result = parse_schema(input);
